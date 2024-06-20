@@ -1,0 +1,12 @@
+[package]
+name = "tunl-relay"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+clap = { version = "3.2", features = ["derive"] }
+bincode = "2.0.0-rc.3"
+anyhow = "1.0"
+pretty_env_logger = "0.5"
+log = "0.4"
