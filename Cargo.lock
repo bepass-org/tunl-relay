@@ -562,6 +562,7 @@ dependencies = [
  "clap",
  "log",
  "pretty_env_logger",
+ "serde",
  "tokio",
 ]
 

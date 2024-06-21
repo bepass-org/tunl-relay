@@ -3,43 +3,65 @@ use std::net::IpAddr;
 use crate::proto::*;
 
 use tokio::{
-    io::{self, copy_bidirectional, AsyncReadExt},
+    io::{self, copy_bidirectional, AsyncBufReadExt, AsyncReadExt, BufReader},
     net::{TcpListener, TcpStream},
 };
 
-pub async fn run(bind: IpAddr, port: u16) -> io::Result<()> {
+pub async fn run(version: Version, bind: IpAddr, port: u16) -> io::Result<()> {
     let addr = format!("{bind}:{port}");
 
     let listener = TcpListener::bind(&addr).await?;
     log::info!("Listening {}", &addr);
 
     loop {
-        let (mut conn, _) = listener.accept().await?;
+        let (conn, _) = listener.accept().await?;
+        let mut stream = BufReader::new(conn);
 
-        let mut len = [0u8; 2];
-        conn.read(&mut len).await?;
+        let header = match &version {
+            Version::V1 => {
+                let mut buf = vec![];
 
-        let mut buf = vec![0u8; u16::from_be_bytes(len) as _];
-        conn.read(&mut buf).await?;
-
-        let (header, _): (Header, usize) =
-            match bincode::decode_from_slice(&buf, bincode::config::standard()) {
-                Ok(h) => h,
-                Err(e) => {
-                    log::error!("invalid header format: {e}");
+                stream.read_until(b'\r', &mut buf).await?;
+                if buf.is_empty() {
+                    // TODO: error
                     continue;
                 }
-            };
 
-        match header.net {
-            Network::Tcp => tcp_handler(&mut conn, header.addr, header.port).await?,
-            Network::Udp => unimplemented!(),
-        }
+                Header::from_v1(&buf)?
+            }
+            Version::V2 => {
+                let mut len = [0u8; 2];
+                stream.read(&mut len).await?;
+
+                let mut buf = vec![0u8; u16::from_be_bytes(len) as _];
+                stream.read(&mut buf).await?;
+
+                Header::from_v2(&buf)?
+            }
+        };
+
+        log::info!(
+            "accepted [{:?}] {}:{}",
+            header.net,
+            header.addr,
+            header.port
+        );
+        tokio::spawn(handler(header, stream.into_inner()));
     }
 }
 
-async fn tcp_handler(stream: &mut TcpStream, addr: IpAddr, port: u16) -> io::Result<()> {
+async fn handler(header: Header, stream: TcpStream) {
+    if let Err(e) = match header.net {
+        Network::Tcp => tcp_handler(stream, header.addr, header.port).await,
+        Network::Udp => unimplemented!(),
+    } {
+        log::error!("error {e}");
+    }
+}
+
+async fn tcp_handler(mut stream: TcpStream, addr: IpAddr, port: u16) -> io::Result<()> {
     let mut upstream = TcpStream::connect(format!("{addr}:{port}")).await?;
-    copy_bidirectional(stream, &mut upstream).await?;
+    copy_bidirectional(&mut stream, &mut upstream).await?;
+
     Ok(())
 }
