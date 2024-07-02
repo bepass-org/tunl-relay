@@ -2,6 +2,7 @@ mod proto;
 mod proxy;
 
 use proto::Version;
+use proxy::Proxy;
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
@@ -27,7 +28,8 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    match proxy::run(args.version, args.bind, args.port).await {
+    let proxy = Proxy::new(args.version, args.bind, args.port);
+    match proxy.run().await {
         Err(e) => Err(anyhow!("{e}")),
         _ => Ok(()),
     }

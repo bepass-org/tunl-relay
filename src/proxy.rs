@@ -3,28 +3,53 @@ use std::net::IpAddr;
 use crate::proto::*;
 
 use tokio::{
-    io::{self, copy_bidirectional, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    io::{
+        self, copy_bidirectional, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, Error,
+        ErrorKind,
+    },
     net::{TcpListener, TcpStream},
 };
 
-pub async fn run(version: Version, bind: IpAddr, port: u16) -> io::Result<()> {
-    let addr = format!("{bind}:{port}");
+pub struct Proxy {
+    bind: IpAddr,
+    port: u16,
+    version: Version,
+}
 
-    let listener = TcpListener::bind(&addr).await?;
-    log::info!("Listening {}", &addr);
+impl Proxy {
+    pub fn new(version: Version, bind: IpAddr, port: u16) -> Self {
+        Self {
+            bind,
+            port,
+            version,
+        }
+    }
 
-    loop {
-        let (conn, _) = listener.accept().await?;
+    pub async fn run(&self) -> io::Result<()> {
+        let addr = format!("{}:{}", self.bind, self.port);
+
+        let l = TcpListener::bind(&addr).await?;
+        log::info!("Listening {}", &addr);
+
+        loop {
+            match self.listener(&l).await {
+                Err(e) => log::error!("[listener]: {e}"),
+                _ => {}
+            };
+        }
+    }
+
+    async fn listener(&self, l: &TcpListener) -> io::Result<()> {
+        let (conn, _) = l.accept().await?;
         let mut stream = BufReader::new(conn);
 
-        let header = match &version {
+        let header = match &self.version {
             Version::V1 => {
                 let mut buf = vec![];
 
                 stream.read_until(b'\r', &mut buf).await?;
                 if buf.is_empty() {
-                    // TODO: error
-                    continue;
+                    return Err(Error::new(ErrorKind::Other, "empty buffer".to_string()));
                 }
 
                 Header::from_v1(&buf)?
@@ -47,6 +72,8 @@ pub async fn run(version: Version, bind: IpAddr, port: u16) -> io::Result<()> {
             header.port
         );
         tokio::spawn(handler(header, stream.into_inner()));
+
+        Ok(())
     }
 }
 
@@ -67,27 +94,28 @@ async fn tcp_handler(mut stream: TcpStream, addr: IpAddr, port: u16) -> io::Resu
 }
 
 async fn udp_handler(mut stream: TcpStream, addr: IpAddr, port: u16) -> io::Result<()> {
-    // let mut upstream = TcpStream::connect(format!("{addr}:{port}")).await?;
-    // copy_bidirectional(&mut stream, &mut upstream).await?;
+    let (reader, mut writer) = stream.split();
+    let mut reader = BufReader::new(reader);
 
     let udp_stream = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
     udp_stream.connect(format!("{addr}:{port}")).await?;
 
-    let mut buf = [0u8; 65535];
+    let mut tcp_buf = [0u8; 65535];
     let mut udp_buf = [0u8; 65535];
+
     loop {
         tokio::select! {
-            result = stream.read(&mut buf) => {
+            result = reader.read(&mut tcp_buf) => {
                 let n = result?;
                 if n == 0 {
                     break;
                 }
-                udp_stream.send(&buf[..n]).await?;
+                udp_stream.send(&tcp_buf[..n]).await?;
             }
 
             result = udp_stream.recv(&mut udp_buf) => {
                 let n = result?;
-                stream.write_all(&udp_buf[..n]).await?;
+                writer.write_all(&udp_buf[..n]).await?;
             }
         }
     }
