@@ -3,7 +3,7 @@ use std::net::IpAddr;
 use crate::proto::*;
 
 use tokio::{
-    io::{self, copy_bidirectional, AsyncBufReadExt, AsyncReadExt, BufReader},
+    io::{self, copy_bidirectional, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
 };
 
@@ -53,7 +53,7 @@ pub async fn run(version: Version, bind: IpAddr, port: u16) -> io::Result<()> {
 async fn handler(header: Header, stream: TcpStream) {
     if let Err(e) = match header.net {
         Network::Tcp => tcp_handler(stream, header.addr, header.port).await,
-        Network::Udp => unimplemented!(),
+        Network::Udp => udp_handler(stream, header.addr, header.port).await,
     } {
         log::error!("error {e}");
     }
@@ -62,6 +62,35 @@ async fn handler(header: Header, stream: TcpStream) {
 async fn tcp_handler(mut stream: TcpStream, addr: IpAddr, port: u16) -> io::Result<()> {
     let mut upstream = TcpStream::connect(format!("{addr}:{port}")).await?;
     copy_bidirectional(&mut stream, &mut upstream).await?;
+
+    Ok(())
+}
+
+async fn udp_handler(mut stream: TcpStream, addr: IpAddr, port: u16) -> io::Result<()> {
+    // let mut upstream = TcpStream::connect(format!("{addr}:{port}")).await?;
+    // copy_bidirectional(&mut stream, &mut upstream).await?;
+
+    let udp_stream = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
+    udp_stream.connect(format!("{addr}:{port}")).await?;
+
+    let mut buf = [0u8; 65535];
+    let mut udp_buf = [0u8; 65535];
+    loop {
+        tokio::select! {
+            result = stream.read(&mut buf) => {
+                let n = result?;
+                if n == 0 {
+                    break;
+                }
+                udp_stream.send(&buf[..n]).await?;
+            }
+
+            result = udp_stream.recv(&mut udp_buf) => {
+                let n = result?;
+                stream.write_all(&udp_buf[..n]).await?;
+            }
+        }
+    }
 
     Ok(())
 }

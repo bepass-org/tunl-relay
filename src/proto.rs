@@ -62,6 +62,11 @@ impl Header {
 
         let ver = Version::V1;
 
-        Ok(Self { net, addr, port, ver })
+        Ok(Self {
+            net,
+            addr,
+            port,
+            ver,
+        })
     }
 }
