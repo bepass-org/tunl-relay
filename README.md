@@ -2,7 +2,7 @@
 
 ## Quick Start
 ```sh
-$ ./tunl-relay --bind 0.0.0.0 --port 6666 --version v1
+$ ./tunl-relay --bind 0.0.0.0 --port 6666 --version v2
 ```
 
 ## Usage
