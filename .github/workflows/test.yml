@@ -1,0 +1,45 @@
+name: integration test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: preparatino
+      run: |
+        cargo build && cp ./target/debug/tunl-relay .
+
+    - name: test v1 header
+      run: |
+        ./tunl-relay --version=v1 &
+        PID=$!
+        echo "tunl-relay started with PID $PID"
+        sleep 2
+
+        python3 ./tests/integration.py Test.test_v1
+
+        kill $PID
+        echo "tunl-relay stopped with PID $PID"
+
+    - name: test v2 header
+      run: |
+        ./tunl-relay --version=v2 &
+        PID=$!
+        echo "tunl-relay started with PID $PID"
+        sleep 2
+
+        python3 ./tests/integration.py Test.test_v2
+
+        kill $PID
+        echo "tunl-relay stopped with PID $PID"
