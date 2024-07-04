@@ -3,10 +3,7 @@ use std::net::IpAddr;
 use crate::proto::*;
 
 use tokio::{
-    io::{
-        self, copy_bidirectional, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, Error,
-        ErrorKind,
-    },
+    io::{self, copy_bidirectional, AsyncReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
 };
 
@@ -40,16 +37,25 @@ impl Proxy {
     }
 
     async fn listener(&self, l: &TcpListener) -> io::Result<()> {
-        let (conn, _) = l.accept().await?;
-        let mut stream = BufReader::new(conn);
+        let (mut stream, _) = l.accept().await?;
 
         let header = match &self.version {
             Version::V1 => {
                 let mut buf = vec![];
 
-                stream.read_until(b'\r', &mut buf).await?;
-                if buf.is_empty() {
-                    return Err(Error::new(ErrorKind::Other, "empty buffer".to_string()));
+                // here we're sure the header length is at least 13 bytes
+                let mut chunk = [0u8; 13];
+                stream.read_exact(&mut chunk).await?;
+                buf.extend_from_slice(&chunk);
+
+                // continue reading the header until reach '\n'
+                loop {
+                    let b = stream.read_u8().await?;
+                    if b == b'\n' {
+                        break;
+                    }
+
+                    buf.push(b);
                 }
 
                 Header::from_v1(&buf)?
@@ -71,7 +77,7 @@ impl Proxy {
             header.addr,
             header.port
         );
-        tokio::spawn(handler(header, stream.into_inner()));
+        tokio::spawn(handler(header, stream));
 
         Ok(())
     }
