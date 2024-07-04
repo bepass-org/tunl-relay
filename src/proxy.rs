@@ -3,7 +3,7 @@ use std::net::IpAddr;
 use crate::proto::*;
 
 use tokio::{
-    io::{self, copy_bidirectional, AsyncReadExt, AsyncWriteExt, BufReader},
+    io::{self, copy_bidirectional, AsyncReadExt, AsyncWriteExt, BufReader, Error, ErrorKind},
     net::{TcpListener, TcpStream},
 };
 
@@ -48,14 +48,21 @@ impl Proxy {
                 stream.read_exact(&mut chunk).await?;
                 buf.extend_from_slice(&chunk);
 
-                // continue reading the header until reach '\n'
+                let mut upper = 30; // 30 bytes are enough to see if we're
+                                    // reading a valid header or not
+                                    // continue reading the header until reach '\n'
                 loop {
+                    if upper == 0 {
+                        return Err(Error::new(ErrorKind::Other, "invalid header"));
+                    }
+
                     let b = stream.read_u8().await?;
                     if b == b'\n' {
                         break;
                     }
 
                     buf.push(b);
+                    upper -= 1;
                 }
 
                 Header::from_v1(&buf)?
