@@ -18,11 +18,16 @@ jobs:
 
     - name: preparatino
       run: |
+        echo "build the program"
         cargo build && cp ./target/debug/tunl-relay .
+
+        echo "prepare config"
+        sed -i -e '/whitelist = \[/a\' -e '    "127.0.0.1",' config.toml
+        sed -i -e '/whitelist = \[/a\' -e '    "216.239.38.120",' config.toml
 
     - name: test v1 header
       run: |
-        ./tunl-relay --version=v1 &
+        ./tunl-relay --config config.toml &
         PID=$!
         echo "tunl-relay started with PID $PID"
         sleep 2
@@ -34,7 +39,10 @@ jobs:
 
     - name: test v2 header
       run: |
-        ./tunl-relay --version=v2 &
+        echo "change config protocol version to v2"
+        sed -i -e 's/"v1"/"v2"/' config.toml
+
+        ./tunl-relay --config config.toml &
         PID=$!
         echo "tunl-relay started with PID $PID"
         sleep 2

@@ -2,10 +2,10 @@ use std::net::IpAddr;
 use std::str::FromStr;
 
 use bincode::{Decode, Encode};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::io::{Error, ErrorKind, Result};
 
-#[derive(clap::ValueEnum, Clone, Default, Debug, Decode, Encode, Serialize)]
+#[derive(clap::ValueEnum, Clone, Default, Debug, Decode, Encode, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Version {
     #[default]

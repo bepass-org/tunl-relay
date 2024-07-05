@@ -1,5 +1,7 @@
 use std::net::IpAddr;
+use std::sync::Arc;
 
+use crate::config::Config;
 use crate::proto::*;
 
 use tokio::{
@@ -8,22 +10,18 @@ use tokio::{
 };
 
 pub struct Proxy {
-    bind: IpAddr,
-    port: u16,
-    version: Version,
+    config: Arc<Config>,
 }
 
 impl Proxy {
-    pub fn new(version: Version, bind: IpAddr, port: u16) -> Self {
+    pub fn new(config: Config) -> Self {
         Self {
-            bind,
-            port,
-            version,
+            config: Arc::new(config),
         }
     }
 
     pub async fn run(&self) -> io::Result<()> {
-        let addr = format!("{}:{}", self.bind, self.port);
+        let addr = format!("{}:{}", self.config.bind, self.config.port);
 
         let l = TcpListener::bind(&addr).await?;
         log::info!("Listening {}", &addr);
@@ -37,9 +35,21 @@ impl Proxy {
     }
 
     async fn listener(&self, l: &TcpListener) -> io::Result<()> {
-        let (mut stream, _) = l.accept().await?;
+        let (mut stream, client_addr) = l.accept().await?;
 
-        let header = match &self.version {
+        if !self
+            .config
+            .whitelist
+            .iter()
+            .any(|cidr| cidr.contains(&client_addr.ip()))
+        {
+            return Err(Error::new(
+                ErrorKind::Other,
+                "[blocked] source ip is not in the whitelist",
+            ));
+        }
+
+        let header = match &self.config.version {
             Version::V1 => {
                 let mut buf = vec![];
 
@@ -84,15 +94,25 @@ impl Proxy {
             header.addr,
             header.port
         );
-        tokio::spawn(handler(header, stream));
+        tokio::spawn(handler(self.config.clone(), header, stream));
 
         Ok(())
     }
 }
 
-async fn handler(header: Header, stream: TcpStream) {
+async fn handler(config: Arc<Config>, header: Header, stream: TcpStream) {
     if let Err(e) = match header.net {
-        Network::Tcp => tcp_handler(stream, header.addr, header.port).await,
+        Network::Tcp => {
+            if !config
+                .whitelist
+                .iter()
+                .any(|cidr| cidr.contains(&header.addr))
+            {
+                log::info!("[blocked] destination ip is not in the whitelist");
+                return;
+            }
+            tcp_handler(stream, header.addr, header.port).await
+        }
         Network::Udp => udp_handler(stream, header.addr, header.port).await,
     } {
         log::error!("error {e}");

@@ -11,3 +11,5 @@ bincode = "2.0.0-rc.3"
 anyhow = "1.0"
 pretty_env_logger = "0.5"
 log = "0.4"
+cidr = { version = "0.2", features = ["serde"] }
+toml = "0.8"

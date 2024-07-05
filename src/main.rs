@@ -1,23 +1,18 @@
+mod config;
 mod proto;
 mod proxy;
 
-use proto::Version;
+use config::Config;
 use proxy::Proxy;
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
 
-use std::net::IpAddr;
-
 #[derive(Debug, Parser)]
 #[clap(author, version)]
 pub struct Args {
-    #[clap(short, long, default_value = "0.0.0.0")]
-    pub bind: IpAddr,
-    #[clap(short, long, default_value = "6666")]
-    pub port: u16,
-    #[clap(short, long, value_enum, default_value_t)]
-    pub version: Version,
+    #[clap(short, long)]
+    pub config: String,
 }
 
 #[tokio::main]
@@ -28,7 +23,12 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let proxy = Proxy::new(args.version, args.bind, args.port);
+    let config = match std::fs::read_to_string(args.config) {
+        Ok(c) => Config::new(&c),
+        _ => panic!("could not find the config file"),
+    }?;
+
+    let proxy = Proxy::new(config);
     match proxy.run().await {
         Err(e) => Err(anyhow!("{e}")),
         _ => Ok(()),
