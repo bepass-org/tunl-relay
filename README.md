@@ -18,6 +18,12 @@ whitelist = [
     "103.31.4.0/22",
     ...
 ]
+
+# it blocks private networks by default
+# but you can add other ip addresses (such as torrent trackers) to the list
+blacklist = [
+    "93.158.213.92/32",
+]
 ```
 
 **protocol version**: v1 refers to [bepass-relay protocol](https://github.com/bepass-org/bepass-relay/)

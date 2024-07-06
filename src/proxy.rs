@@ -101,6 +101,20 @@ impl Proxy {
 }
 
 async fn handler(config: Arc<Config>, header: Header, stream: TcpStream) {
+    // block blacklisted ip addresses
+    if config
+        .blacklist
+        .iter()
+        .any(|cidr| cidr.contains(&header.addr))
+    {
+        log::error!(
+            "[blocked] destination {}:{} is in the blacklist",
+            header.addr,
+            header.port
+        );
+        return;
+    }
+
     if let Err(e) = match header.net {
         Network::Tcp => {
             if !config
