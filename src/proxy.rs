@@ -45,7 +45,7 @@ impl Proxy {
         {
             return Err(Error::new(
                 ErrorKind::Other,
-                "[blocked] source ip is not in the whitelist",
+                format!("[blocked] source {client_addr} is not in the whitelist"),
             ));
         }
 
@@ -108,7 +108,11 @@ async fn handler(config: Arc<Config>, header: Header, stream: TcpStream) {
                 .iter()
                 .any(|cidr| cidr.contains(&header.addr))
             {
-                log::info!("[blocked] destination ip is not in the whitelist");
+                log::error!(
+                    "[blocked] destination {}:{} is not in the whitelist",
+                    header.addr,
+                    header.port,
+                );
                 return;
             }
             tcp_handler(stream, header.addr, header.port).await
